@@ -116,6 +116,10 @@ async function _loadRunner(dotnetUrl) {
     .withResourceLoader((type, name, defaultUri, integrity) => {
       const resourceUrl = new URL(defaultUri, dotnetUrl);
 
+      if (type === 'dotnetjs') {
+        return resourceUrl.href;
+      }
+
       if (resourceUrl.origin === window.location.origin) {
         return undefined;
       }
