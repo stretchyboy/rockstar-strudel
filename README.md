@@ -22,8 +22,11 @@ returned as JS `number`; everything else is returned as a `string`.
 
 ## Using it in strudel.cc
 
+This package is ESM-only. In `strudel.cc`, use dynamic `import()` rather than
+static `import ... from`, since the editor input is not a module file.
+
 ```js
-import { init, rockstar } from 'https://esm.sh/rockstar-strudel'
+const { init, rockstar } = await import('https://esm.sh/rockstar-strudel')
 
 // Pre-warm the WASM engine while other code loads (optional but recommended)
 await init()
@@ -41,6 +44,24 @@ const notes = await rockstar`
 // notes === [64, 65, 67]
 
 note(notes).sound("piano").slow(2)
+```
+
+Standalone browser example:
+
+```html
+<script type="module">
+  import { init, rockstar } from 'https://esm.sh/rockstar-strudel'
+
+  await init()
+
+  const notes = await rockstar`
+    Tommy was 60
+    Build Tommy up, up, up, up
+    Shout Tommy
+  `
+
+  console.log(notes)
+</script>
 ```
 
 ### Template interpolations
