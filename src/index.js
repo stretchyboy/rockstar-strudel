@@ -19,13 +19,13 @@
  *
  * CORS requirement
  * ────────────────
- * The WASM engine is loaded from https://codewithrockstar.com/wasm/.
+ * The WASM engine is loaded from https://stretchyboy.github.io/rockstar/ as https://codewithrockstar.com/wasm/ has broken CORS.
  * That origin must serve its WASM assets with
  *   Access-Control-Allow-Origin: *
  * See PLAN.md for instructions on enabling this in a rockstar fork.
  */
 
-/** Default URL of the .NET WASM loader published by codewithrockstar.com. */
+/** Default URL of the .NET WASM loader published by stretchyboy.github.io. */
 const DEFAULT_DOTNET_URL =
   'https://stretchyboy.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js';
 
@@ -38,6 +38,7 @@ const DEFAULT_DOTNET_URL =
  */
 export const ALLOWED_URL_PREFIXES = [
   'https://codewithrockstar.com/',
+  'https://stretchyboy.github.io/rockstar/',
   'https://cdn.jsdelivr.net/',
   'https://unpkg.com/',
   'http://localhost:',
