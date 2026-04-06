@@ -5,7 +5,8 @@ engine up to the `rockstar` template-tag module in this repo so that
 strudel.cc users can simply write:
 
 ```js
-import { rockstar } from 'https://esm.sh/rockstar-strudel'
+import { init, rockstar } from 'https://esm.sh/rockstar-strudel'
+await init('https://<your-username>.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js')
 const data = await rockstar`Shout 42`
 // data === [42]
 ```
@@ -18,96 +19,145 @@ The Starship engine is already built and running at
 `https://codewithrockstar.com/wasm/`.  The issue is that browsers enforce the
 **Same-Origin Policy**: a page on `strudel.cc` cannot load a JS/WASM module
 from `codewithrockstar.com` unless that server explicitly opts in via a CORS
-header.
+header (`Access-Control-Allow-Origin: *`).
 
-Two things are therefore needed:
+`codewithrockstar.com` uses a **custom domain**, which means CORS headers must
+be configured at the CDN/DNS level (e.g. Cloudflare) by the site owner — a
+change that can't be made via a GitHub PR to the repo.
 
-1. **CORS headers** on the WASM assets at `codewithrockstar.com`.
-2. **An npm-published JS package** (`rockstar-strudel`) that dynamically loads
-   those WASM assets and exposes the `rockstar` template tag.
+However, **GitHub Pages on `*.github.io` domains serves all static assets with
+`Access-Control-Allow-Origin: *` built in**, at no extra configuration cost.
+This means a fork of the repo deployed to GitHub Pages at its default
+`<you>.github.io/rockstar` URL has CORS working immediately, with no CDN
+setup needed.
 
-The JS package lives in *this* repo (`stretchyboy/rockstar-strudel`).  The
-CORS change must happen in the **RockstarLang/rockstar** fork (or its hosting
-configuration).
+The complete build pipeline (`.NET` WASM compile → Jekyll site build →
+GitHub Pages deploy) is already automated in the repo's GitHub Actions
+workflows, so enabling it on a fork is a matter of enabling Pages in the
+fork's settings.
 
 ---
 
-## Step 1 — Fork RockstarLang/rockstar
+## Option A — Fork and host on GitHub Pages (unblocked today)
+
+This is the fastest path. No CDN, no Cloudflare, no extra accounts needed.
+
+### Step 1 — Fork `RockstarLang/rockstar`
+
+Fork it on GitHub (keep it **public** so the free GitHub Pages tier is
+available).
+
+### Step 2 — Enable GitHub Pages on the fork
+
+1. Go to your fork → **Settings → Pages**
+2. Under *Build and deployment*, set Source to **GitHub Actions**
+   (not a branch — the workflow handles deployment itself)
+3. Save.
+
+### Step 3 — Trigger the first build
+
+The build pipeline is three chained workflows:
+
+```
+build-rockstar-2.0
+  └─► release-rockstar-engine
+        └─► build-and-deploy-codewithrockstar.com  →  GitHub Pages
+```
+
+Trigger the first one manually:
+- Go to **Actions → build-rockstar-2.0 → Run workflow** (pick `main`)
+
+This will:
+1. Build the Starship .NET engine and run its tests
+2. Compile the WASM with `dotnet publish Starship/Rockstar.Wasm -c Release`
+3. Copy the WASM into the Jekyll site and deploy it to GitHub Pages
+
+After a few minutes your site will be live at:
+```
+https://<your-username>.github.io/rockstar/
+```
+
+And the WASM loader will be at:
+```
+https://<your-username>.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js
+```
+
+### Step 4 — Point `rockstar-strudel` at your fork
+
+Update `DEFAULT_DOTNET_URL` in `src/index.js`:
+
+```js
+const DEFAULT_DOTNET_URL =
+  'https://<your-username>.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js';
+```
+
+Or leave the default pointing at `codewithrockstar.com` and let users pass
+their own URL via `init()`:
+
+```js
+await init('https://<your-username>.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js')
+```
+
+### Step 5 — Publish the npm package
 
 ```bash
-# on GitHub: fork RockstarLang/rockstar to your account
-git clone https://github.com/<you>/rockstar.git
-cd rockstar
+cd rockstar-strudel
+npm publish --access public
 ```
+
+Users can then import from `https://esm.sh/rockstar-strudel`.
 
 ---
 
-## Step 2 — Add CORS headers to the WASM assets
+## Option B — PR / issue to `RockstarLang/rockstar` (long-term fix)
 
-The `codewithrockstar.com` site is a Jekyll project deployed (most likely) via
-GitHub Pages, with the WASM files published separately to the `/wasm/` path.
+A PR to the repo **cannot** fix CORS for the custom domain by itself — that
+change must be made in the Cloudflare (or equivalent CDN) dashboard by the
+site owner.  The most useful thing you can do is:
 
-Choose the option that matches your hosting:
+1. **Open an issue** explaining the strudel.cc use case and asking them to add
+   `Access-Control-Allow-Origin: *` to the `/wasm/` path in their CDN config.
+   A single Cloudflare Transform Rule would fix it permanently for all users.
 
-### Option A — Cloudflare (recommended)
+2. Optionally include a **PR that adds a `_headers` file** as a signal of
+   intent (it has no effect on a custom domain, but documents the desired
+   config):
 
-If the domain is proxied through Cloudflare (orange cloud in DNS settings):
-
-1. Go to **Cloudflare dashboard → your domain → Rules → Transform Rules →
-   Modify Response Header**.
-2. Create a new rule:
-   - **Field**: URI Path  **Operator**: starts with  **Value**: `/wasm/`
-   - **Action**: Set  **Header name**: `Access-Control-Allow-Origin`
-     **Value**: `*`
-3. Save and deploy.
-
-Alternatively, add a `_headers` file at the root of the
-`codewithrockstar.com/` directory (works with Cloudflare Pages):
-
-```
-# codewithrockstar.com/_headers
-/wasm/*
-  Access-Control-Allow-Origin: *
-```
-
-### Option B — Netlify
-
-Add (or update) `codewithrockstar.com/_headers`:
-
-```
-/wasm/*
-  Access-Control-Allow-Origin: *
-```
-
-Commit and push; Netlify picks this up automatically.
-
-### Option C — Host the WASM on jsDelivr via GitHub Releases
-
-jsDelivr mirrors GitHub release assets with CORS enabled.
-
-1. Build the WASM (see Step 3).
-2. Create a GitHub Release and upload the entire `wwwroot/` directory as a
-   zip, or upload the individual `_framework/` files.
-3. Reference them via jsDelivr:
    ```
-   https://cdn.jsdelivr.net/gh/<you>/rockstar@<tag>/wasm/wwwroot/_framework/dotnet.js
+   # codewithrockstar.com/_headers
+   /wasm/*
+     Access-Control-Allow-Origin: *
    ```
-4. Pass this URL to `init()` in the JS module (or update `DEFAULT_DOTNET_URL`
-   in `src/index.js`).
 
-> **Note**: jsDelivr does not serve binary `.wasm` files with the correct
-> `application/wasm` MIME type from GitHub Releases.  Use this option only if
-> you can confirm MIME types are correct, or bundle the WASM into the npm
-> package instead (see Step 5).
+Once the upstream site adds the header, update `DEFAULT_DOTNET_URL` back to
+`https://codewithrockstar.com/wasm/wwwroot/_framework/dotnet.js` so users
+get the canonical URL by default.
 
 ---
 
-## Step 3 — Build the WASM locally to verify
+## Summary
+
+| Path | Works today? | Effort |
+|---|---|---|
+| Fork → GitHub Pages (Option A) | ✅ Yes, ~20 min | Fork + enable Pages + trigger build |
+| PR/issue to upstream (Option B) | ⏳ Depends on maintainer | Low effort, uncertain timeline |
+
+**Do both**: use Option A to unblock yourself right now, open an upstream
+issue (Option B) so the permanent fix lands in `codewithrockstar.com`.
+
+---
+
+## Local smoke-test (optional but recommended)
+
+To verify `src/index.js` against a local WASM build before publishing:
+
+### Build the WASM locally
 
 You need the **.NET 9 SDK** (`dotnet --version` should show `9.x`).
 
 ```bash
 cd Starship
+dotnet workload install wasm-tools
 dotnet publish Rockstar.Wasm -c Release -o ../wasm-publish
 ```
 
@@ -120,36 +170,18 @@ _framework/
   dotnet.runtime.js
   dotnet.wasm             ← the .NET runtime (~7 MB, AOT-compiled in Release)
   Rockstar.Wasm.wasm      ← the Rockstar engine
-  ... (satellite assemblies, boot config, etc.)
 ```
 
-Serve this folder locally and verify it works:
+### Run the integration test
 
-```bash
-cd ../wasm-publish/wwwroot
-npx serve -p 8080
-# open http://localhost:8080 and check the browser console
-```
-
----
-
-## Step 4 — Smoke-test the JS module against your local WASM
-
-Clone this repo, then:
-
-```bash
-cd rockstar-strudel
-npm test           # 19 unit tests, all pure JS — no WASM needed
-```
-
-To do a browser integration test, create a minimal HTML file:
+Create a minimal HTML file in the same directory as the WASM:
 
 ```html
-<!-- /tmp/test.html -->
+<!-- wasm-publish/wwwroot/test.html -->
 <script type="module">
-  import { init, rockstar } from './src/index.js'
+  import { init, rockstar } from '/path/to/rockstar-strudel/src/index.js'
 
-  // Point at the locally-served WASM
+  // localhost is in the allowed URL list, so no allowlist update needed
   await init('http://localhost:8080/_framework/dotnet.js')
 
   const result = await rockstar`
@@ -164,94 +196,32 @@ To do a browser integration test, create a minimal HTML file:
 </script>
 ```
 
-Serve it from the same origin as the WASM (to avoid CORS issues during local
-testing):
+Serve from localhost (same origin as the WASM avoids CORS entirely):
 
 ```bash
-# from the wasm-publish/wwwroot directory
-cp /path/to/test.html .
+cd wasm-publish/wwwroot
 npx serve -p 8080
 # open http://localhost:8080/test.html
 ```
 
 ---
 
-## Step 5 — Publish the JS module to npm
-
-### 5a — Update DEFAULT_DOTNET_URL if needed
-
-If you are serving the WASM from your own URL (not the upstream
-`codewithrockstar.com`), update the constant in `src/index.js`:
-
-```js
-const DEFAULT_DOTNET_URL =
-  'https://codewithrockstar.com/wasm/wwwroot/_framework/dotnet.js';
-  //  ↑ change to your own CDN URL if you forked the hosting
-```
-
-### 5b — Publish
-
-```bash
-cd rockstar-strudel
-npm publish --access public
-```
-
-The package will be available at `https://esm.sh/rockstar-strudel` (esm.sh
-auto-publishes packages from npm with proper CORS headers and ESM wrapping).
-
----
-
-## Step 6 — Add a CI workflow to keep the WASM in sync (optional)
-
-Add `.github/workflows/publish-strudel-js.yml` to the rockstar fork:
-
-```yaml
-name: Publish rockstar-strudel
-
-on:
-  release:
-    types: [published]
-
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '9.x'
-
-      - name: Build WASM
-        run: dotnet publish Starship/Rockstar.Wasm -c Release -o wasm-publish
-
-      # If you host the WASM yourself: upload wasm-publish/wwwroot to your CDN
-      # here, e.g. via an AWS S3 sync, Cloudflare Pages deploy, etc.
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Publish rockstar-strudel to npm
-        run: npm publish --access public
-        working-directory: path/to/rockstar-strudel
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-```
-
----
-
 ## Summary checklist
 
-- [ ] Fork `RockstarLang/rockstar`
-- [ ] Add `Access-Control-Allow-Origin: *` to the `/wasm/` path on
-      `codewithrockstar.com` (Cloudflare rule, `_headers` file, or alternative
-      CDN)
-- [ ] Build the WASM with `dotnet publish Rockstar.Wasm -c Release` and verify
-      it works locally
-- [ ] Smoke-test `src/index.js` against the local WASM build
-- [ ] Update `DEFAULT_DOTNET_URL` in `src/index.js` if serving from a
-      different URL
-- [ ] `npm publish` the `rockstar-strudel` package
-- [ ] Verify in strudel.cc: `import { rockstar } from 'https://esm.sh/rockstar-strudel'`
+- [ ] Fork `RockstarLang/rockstar` on GitHub (keep public)
+- [ ] Fork Settings → Pages → Source: **GitHub Actions**
+- [ ] Actions → `build-rockstar-2.0` → **Run workflow** (triggers the full chain)
+- [ ] Wait for Pages deployment; note your URL: `https://<you>.github.io/rockstar/`
+- [ ] Update `DEFAULT_DOTNET_URL` in `src/index.js` to your fork's WASM URL
+      (or let users pass it to `init()`)
+- [ ] `npm publish --access public` the `rockstar-strudel` package
+- [ ] Verify in strudel.cc:
+      ```js
+      import { init, rockstar } from 'https://esm.sh/rockstar-strudel'
+      await init('https://<you>.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js')
+      const data = await rockstar`Shout 42`   // [42]
+      ```
+- [ ] Open an issue on `RockstarLang/rockstar` asking them to add
+      `Access-Control-Allow-Origin: *` to `/wasm/` at their CDN level, so
+      the default URL can eventually point back at `codewithrockstar.com`
+

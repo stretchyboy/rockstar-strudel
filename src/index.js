@@ -32,16 +32,33 @@ const DEFAULT_DOTNET_URL =
 /**
  * URL prefixes that are considered safe for loading the dotnet.js WASM
  * runtime.  Calls to `init()` with a URL that does not start with one of
- * these prefixes are rejected to prevent loading arbitrary remote code.
+ * these prefixes (or match the github.io pattern) are rejected to prevent
+ * loading arbitrary remote code.
  * Extend this list if you host the WASM yourself on a trusted CDN.
  */
-const ALLOWED_URL_PREFIXES = [
+export const ALLOWED_URL_PREFIXES = [
   'https://codewithrockstar.com/',
   'https://cdn.jsdelivr.net/',
   'https://unpkg.com/',
   'http://localhost:',
   'http://127.0.0.1:',
 ];
+
+/** github.io subdomains (e.g. username.github.io) are also trusted. */
+export const GITHUB_IO_PATTERN = /^https:\/\/[^.]+\.github\.io\//;
+
+/**
+ * Returns true if the given dotnetUrl is trusted for WASM loading.
+ * Exported for testing.
+ * @param {string} url
+ * @returns {boolean}
+ */
+export function isTrustedUrl(url) {
+  return (
+    ALLOWED_URL_PREFIXES.some((prefix) => url.startsWith(prefix)) ||
+    GITHUB_IO_PATTERN.test(url)
+  );
+}
 
 /**
  * The single cached promise that resolves to the RockstarRunner export object.
@@ -83,13 +100,11 @@ export async function init(dotnetUrl) {
  * @returns {Promise<object>}  Resolves to `exports.Rockstar.Wasm.RockstarRunner`
  */
 async function _loadRunner(dotnetUrl) {
-  const isTrusted = ALLOWED_URL_PREFIXES.some((prefix) =>
-    dotnetUrl.startsWith(prefix)
-  );
-  if (!isTrusted) {
+  if (!isTrustedUrl(dotnetUrl)) {
     throw new Error(
       `Untrusted dotnet.js URL: "${dotnetUrl}". ` +
-        `Must start with one of: ${ALLOWED_URL_PREFIXES.join(', ')}. ` +
+        `Must start with one of: ${ALLOWED_URL_PREFIXES.join(', ')} ` +
+        `or be a *.github.io URL. ` +
         `Add your CDN prefix to ALLOWED_URL_PREFIXES in src/index.js if needed.`
     );
   }

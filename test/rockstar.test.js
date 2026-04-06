@@ -9,7 +9,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSource, coerce } from '../src/index.js';
+import { buildSource, coerce, isTrustedUrl } from '../src/index.js';
 
 // ─── buildSource ────────────────────────────────────────────────────────────
 
@@ -114,5 +114,46 @@ describe('coerce', () => {
   it('strips multiple trailing newlines', () => {
     assert.equal(coerce('42\n\n'), 42);
     assert.equal(coerce('hi\n\n'), 'hi');
+  });
+});
+
+// ─── isTrustedUrl ────────────────────────────────────────────────────────────
+
+describe('isTrustedUrl', () => {
+  it('trusts codewithrockstar.com', () => {
+    assert.ok(isTrustedUrl('https://codewithrockstar.com/wasm/wwwroot/_framework/dotnet.js'));
+  });
+
+  it('trusts cdn.jsdelivr.net', () => {
+    assert.ok(isTrustedUrl('https://cdn.jsdelivr.net/gh/someone/rockstar@v1/wasm/dotnet.js'));
+  });
+
+  it('trusts unpkg.com', () => {
+    assert.ok(isTrustedUrl('https://unpkg.com/some-package/dotnet.js'));
+  });
+
+  it('trusts any *.github.io subdomain', () => {
+    assert.ok(isTrustedUrl('https://stretchyboy.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js'));
+    assert.ok(isTrustedUrl('https://anyone.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js'));
+  });
+
+  it('trusts localhost with a port', () => {
+    assert.ok(isTrustedUrl('http://localhost:8080/_framework/dotnet.js'));
+  });
+
+  it('trusts 127.0.0.1 with a port', () => {
+    assert.ok(isTrustedUrl('http://127.0.0.1:3000/_framework/dotnet.js'));
+  });
+
+  it('rejects an arbitrary https URL', () => {
+    assert.ok(!isTrustedUrl('https://evil.example.com/dotnet.js'));
+  });
+
+  it('rejects a bare github.io URL without a subdomain', () => {
+    assert.ok(!isTrustedUrl('https://github.io/dotnet.js'));
+  });
+
+  it('rejects http (non-localhost)', () => {
+    assert.ok(!isTrustedUrl('http://codewithrockstar.com/wasm/dotnet.js'));
   });
 });
