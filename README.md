@@ -7,6 +7,7 @@ environment) via a simple template-tag function.
 Every value printed by `Say` / `Shout` / `Scream` / `Whisper` becomes one
 element of the returned array.  Values that parse as finite numbers are
 returned as JS `number`; everything else is returned as a `string`.
+
 ---
 
 ## Using it in strudel.cc
