@@ -27,7 +27,7 @@
 
 /** Default URL of the .NET WASM loader published by codewithrockstar.com. */
 const DEFAULT_DOTNET_URL =
-  'https://codewithrockstar.com/wasm/wwwroot/_framework/dotnet.js';
+  'https://stretchyboy.github.io/rockstar/wasm/wwwroot/_framework/dotnet.js';
 
 /**
  * URL prefixes that are considered safe for loading the dotnet.js WASM
