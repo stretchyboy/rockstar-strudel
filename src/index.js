@@ -108,10 +108,29 @@ async function _loadRunner(dotnetUrl) {
         `Add your CDN prefix to ALLOWED_URL_PREFIXES in src/index.js if needed.`
     );
   }
+  const dotnetOrigin = new URL(dotnetUrl).origin;
   // eslint-disable-next-line no-eval -- dynamic import from a runtime URL
   const { dotnet } = await import(/* webpackIgnore: true */ dotnetUrl);
   const { getAssemblyExports, getConfig } = await dotnet
     .withDiagnosticTracing(false)
+    .withResourceLoader((type, name, defaultUri, integrity) => {
+      const resourceUrl = new URL(defaultUri, dotnetUrl);
+
+      if (resourceUrl.origin === window.location.origin) {
+        return undefined;
+      }
+
+      if (resourceUrl.origin !== dotnetOrigin) {
+        throw new Error(
+          `Unexpected runtime asset origin for ${name}: "${resourceUrl.origin}".`
+        );
+      }
+
+      return fetch(resourceUrl, {
+        credentials: 'omit',
+        integrity,
+      });
+    })
     .create();
   const config = getConfig();
   const exports = await getAssemblyExports(config.mainAssemblyName);
