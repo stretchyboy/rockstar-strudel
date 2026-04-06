@@ -1,0 +1,31 @@
+{
+  "name": "rockstar-strudel",
+  "version": "1.0.0",
+  "description": "Run Rockstar lang programs via the Starship WASM engine, returning output as a JS array. Designed for use in the strudel.cc live-coding REPL.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stretchyboy/rockstar-strudel.git"
+  },
+  "keywords": [
+    "rockstar",
+    "strudel",
+    "live-coding",
+    "music",
+    "wasm",
+    "template-tag"
+  ],
+  "author": "",
+  "license": "AGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/stretchyboy/rockstar-strudel/issues"
+  },
+  "homepage": "https://github.com/stretchyboy/rockstar-strudel#readme"
+}
