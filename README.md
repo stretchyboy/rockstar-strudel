@@ -51,6 +51,11 @@ const pro = await rockstar_pro`
 // Fully stringified values for speech/text workflows
 // pro.text_output === ["hello world", ["12", ["my dreams", "7"]]]
 
+// Sanitized source tokens for Shaba/Shabda speech sample names
+// pro.speech === ["say_hello_world", "shout__012_my_dreams_007_"]
+// Use in Strudel as:
+// samples('shabda/speech:'+pro.speech.join(','))
+
 // Raw callback lines from WASM
 // pro.raw_output keeps trailing newlines exactly as emitted
 
@@ -104,6 +109,8 @@ Tagged-template function with richer parallel output views:
 - `output`: numeric-first values (`number` or nested numeric arrays).
 - `mixed_output`: mixed typed values with words preserved.
 - `text_output`: fully stringified values for text/speech use.
+- `speech`: sanitized line tokens derived from source code for Shabda speech
+  sample lookup (for example `samples('shabda/speech:'+prog.speech.join(','))`).
 - `templateValues`: the interpolation values used for this run.
 - `rerun(...values)`: run the same template again, replacing interpolation
   values positionally. Calling `rerun()` with no arguments repeats the same run.

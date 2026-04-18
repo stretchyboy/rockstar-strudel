@@ -482,6 +482,7 @@ export async function rockstar(strings, ...values) {
  *   output: Array<number|Array<unknown>>,
  *   mixed_output: Array<number|string|Array<unknown>>,
  *   text_output: Array<string|Array<unknown>>,
+ *   speech: Array<string>, // samples('shabda/speech:'+prog.speech.join(','))
  *   rerun: (...values: Array<unknown>) => Promise<object>,
  *   getVariables: () => never,
  *   callFunction: (name: string, ...args: Array<unknown>) => never,
@@ -495,6 +496,14 @@ export async function rockstar_pro(strings, ...values) {
   const output = [];
   const mixed_output = [];
   const text_output = [];
+  const lines = code.split('\n')
+  const speech = lines.map((x) => x.toLowerCase()
+  .trim()
+  .replaceAll(' ', '_')
+  .replace(/\W/g, ''))
+  .filter((x)=> x.length);
+
+  console.log(`samples('shabda/speech:'+prog.speech.join(','))`)
 
   await runner.Run(
     code,
@@ -526,6 +535,7 @@ export async function rockstar_pro(strings, ...values) {
     output,
     mixed_output,
     text_output,
+    speech,
     rerun: (...nextArgs) => {
       const nextValues = resolveRerunValues(values, ...nextArgs);
       return rockstar_pro(strings, ...nextValues);
