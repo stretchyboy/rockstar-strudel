@@ -1,6 +1,6 @@
 {
   "name": "rockstar-strudel",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Run Rockstar lang programs via the Starship WASM engine, returning output as a JS array. Designed for use in the strudel.cc live-coding REPL.",
   "type": "module",
   "main": "./src/index.js",
