@@ -75,6 +75,39 @@ const shifted = await melody.rerun(62)
 const shiftedAgain = await shifted.rerun(([prevRoot]) => [prevRoot + 2])
 ```
 
+### Using `to_base()` for melodic number conversion
+
+Convert output numbers to different bases and feed them into a Strudel sequence:
+
+```js
+const { init, rockstar, rockstar_pro, to_base } = await import('https://esm.sh/rockstar-strudel')
+
+// Pre-warm the WASM engine while other code loads (optional but recommended)
+await init()
+
+// Run a Rockstar program
+const prog = await rockstar_pro`
+  Papa was a rolling stone
+  (Wherever he laid his hat)
+  (was his home)
+  (And when he died)
+  (All he left us was alone)
+  Say Papa
+  Build up Papa
+  Scream Papa
+`
+
+samples('shabda/speech:'+prog.speech.join(','))
+
+$: s(slowcat(prog.speech.slice(0,5)).degradeBy(.9))
+
+$: note(seq(to_base(prog.output, 10).flat(2))
+  .slow("<4 2 4>")
+  .scale("C:major")
+)
+.sound("piano").every(4, rev)
+```
+
 
 ### Template interpolations
 
@@ -147,6 +180,16 @@ an ellipsis (`...` or `…`) introduces the decimal separator.
 
 Parses one raw callback line into a dual-view structure used by
 `rockstar_pro` (`raw`, `output`, `poetic`). Exported for testing.
+
+### `to_base(number, base)` → `array | array[]`
+
+Converts a number or array of numbers to the specified base (2–36), returning
+an array of digits or an array of digit arrays.  Useful for converting Rockstar
+output into melodic sequences via Strudel's `seq()`.
+
+Examples:
+- `to_base(1344, 10)` → `[1, 3, 4, 4]`
+- `to_base([1344, 23], 16)` → `[[5, 4, 0], [1, 7]]`
 
 ---
 
