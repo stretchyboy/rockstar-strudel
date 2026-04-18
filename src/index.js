@@ -503,7 +503,7 @@ export async function rockstar_pro(strings, ...values) {
   .replace(/\W/g, ''))
   .filter((x)=> x.length);
 
-  console.log(`samples('shabda/speech:'+prog.speech.join(','))`)
+  //console.log(`samples('shabda/speech:'+prog.speech.join(','))`)
 
   await runner.Run(
     code,
@@ -544,4 +544,21 @@ export async function rockstar_pro(strings, ...values) {
     callFunction: () => unsupported('callFunction()'),
     listFunctions: () => unsupported('listFunctions()'),
   };
+}
+
+export const to_base = function (number, base) {
+    const convertOne = function (value) {
+        let digit = [];
+        while (value > 0) {
+            digit.unshift(value % base);
+            value = Math.floor(value / base);
+        }
+        return digit;
+    };
+
+    if (Array.isArray(number)) {
+        return number.map(convertOne);
+    }
+
+    return convertOne(number);
 }
