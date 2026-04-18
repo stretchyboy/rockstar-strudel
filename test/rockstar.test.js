@@ -9,7 +9,13 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSource, coerce, isTrustedUrl } from '../src/index.js';
+import {
+  buildSource,
+  coerce,
+  isTrustedUrl,
+  parsePoeticNumber,
+  parseOutputLine,
+} from '../src/index.js';
 
 // ─── buildSource ────────────────────────────────────────────────────────────
 
@@ -155,5 +161,96 @@ describe('isTrustedUrl', () => {
 
   it('rejects http (non-localhost)', () => {
     assert.ok(!isTrustedUrl('http://codewithrockstar.com/wasm/dotnet.js'));
+  });
+});
+
+// ─── parsePoeticNumber ──────────────────────────────────────────────────────
+
+describe('parsePoeticNumber', () => {
+  it('maps word lengths to digits modulo 10', () => {
+    assert.equal(parsePoeticNumber('My dreams'), 26);
+  });
+
+  it('ignores apostrophes and stops at statement punctuation', () => {
+    assert.equal(
+      parsePoeticNumber("a panther, he ain't talkin' 'bout love. Shout Tommy"),
+      1724644
+    );
+  });
+
+  it('treats an ellipsis as the decimal separator', () => {
+    assert.equal(
+      parsePoeticNumber("ice... a life unfulfilled, wakin' everybody up, taking booze and pills."),
+      3.1415926535
+    );
+  });
+
+  it('counts hyphens as letters', () => {
+    assert.equal(parsePoeticNumber('life-long.'), 9);
+  });
+
+  it('supports the unicode ellipsis character too', () => {
+    assert.equal(
+      parsePoeticNumber('my… darkest nightmarish longings, my cravings, a symphony of suff\'ring that lasts life-long.'),
+      2.718281828459
+    );
+  });
+
+  it('returns undefined when there are no words', () => {
+    assert.equal(parsePoeticNumber('!!!'), undefined);
+  });
+});
+
+// ─── parseOutputLine ────────────────────────────────────────────────────────
+
+describe('parseOutputLine', () => {
+  it('keeps text in output and converts to poetic number in poetic view', () => {
+    const parsed = parseOutputLine('hello world\n');
+    assert.deepEqual(parsed, {
+      raw: 'hello world\n',
+      output: 'hello world',
+      poetic: 55,
+    });
+  });
+
+  it('coerces plain numeric lines identically in both views', () => {
+    const parsed = parseOutputLine('123\n');
+    assert.deepEqual(parsed, {
+      raw: '123\n',
+      output: 123,
+      poetic: 123,
+    });
+  });
+
+  it('parses JSON-style lists and converts string numerals', () => {
+    const parsed = parseOutputLine('[ "012" ]\n');
+    assert.deepEqual(parsed, {
+      raw: '[ "012" ]\n',
+      output: [12],
+      poetic: [12],
+    });
+  });
+
+  it('preserves words in output while converting them in poetic view', () => {
+    const parsed = parseOutputLine('["3", ["my dreams", "007"]]\n');
+    assert.deepEqual(parsed, {
+      raw: '["3", ["my dreams", "007"]]\n',
+      output: [3, ['my dreams', 7]],
+      poetic: [3, [26, 7]],
+    });
+  });
+
+  it('returns undefined for blank output lines', () => {
+    assert.equal(parseOutputLine('\n'), undefined);
+    assert.equal(parseOutputLine('\r\n'), undefined);
+  });
+
+  it('falls back to string output when malformed JSON list is printed', () => {
+    const parsed = parseOutputLine('[ nope ]\n');
+    assert.deepEqual(parsed, {
+      raw: '[ nope ]\n',
+      output: '[ nope ]',
+      poetic: 4,
+    });
   });
 });

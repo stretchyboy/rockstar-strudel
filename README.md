@@ -5,15 +5,17 @@ Run [Rockstar](https://codewithrockstar.com) programs from the
 environment) via a simple template-tag function.
 
 Every value printed by `Say` / `Shout` / `Scream` / `Whisper` becomes one
-element of the returned array.  Values that parse as finite numbers are
+element of the returned array. Values that parse as finite numbers are
 returned as JS `number`; everything else is returned as a `string`.
+
+For richer workflows (lyrics/text + numeric pipelines), use `rockstar_pro`.
 
 ---
 
 ## Using it in strudel.cc
 
 ```js
-const { init, rockstar } = await import('https://esm.sh/rockstar-strudel')
+const { init, rockstar, rockstar_pro } = await import('https://esm.sh/rockstar-strudel')
 
 // Pre-warm the WASM engine while other code loads (optional but recommended)
 await init()
@@ -32,6 +34,24 @@ const notes = await rockstar`
 //notes === [60, 64, 65, 67]
 
 note(seq(notes)).sound("piano")
+
+// Rich result with parallel views
+const pro = await rockstar_pro`
+  Say hello world
+  Shout [ "012", ["my dreams", "007"] ]
+`
+
+// Text-friendly values for speech/lyrics use
+// pro.output === ["hello world", [12, ["my dreams", 7]]]
+
+// Numeric-only values for number-based Strudel functions
+// pro.poetic_output === [55, [12, [26, 7]]]
+
+// Raw callback lines from WASM
+// pro.raw_output keeps trailing newlines exactly as emitted
+
+// Exact source text executed (after template interpolation)
+// pro.sourceText is available for lyric reuse
 ```
 
 
@@ -59,6 +79,24 @@ const data = await rockstar`
 Tagged-template function.  Runs the Rockstar source code and resolves with an
 array of every printed value.
 
+### `rockstar_pro(strings, ...values)` → `Promise<object>`
+
+Tagged-template function with richer output views:
+
+- `sourceText`: exact Rockstar code that was executed.
+- `raw_output`: raw callback lines from WASM (verbatim, including trailing newlines).
+- `output`: text-friendly typed values.
+- `poetic_output`: numeric-only values (`number` or nested arrays of numbers),
+  aligned by index with `output`.
+
+`output[i]` and `poetic_output[i]` always refer to the same emitted line.
+
+For JSON-style list output (for example `[ "012" ]`), both views parse and
+convert recursively, so that case resolves to `[12]`.
+
+For non-list text output, words remain available in `output` while
+`poetic_output` applies Rockstar poetic numeric literal conversion.
+
 ### `init([dotnetUrl])` → `Promise<void>`
 
 Pre-loads the WASM engine.  Optionally accepts a custom `dotnet.js` URL (see
@@ -73,6 +111,18 @@ call.  Exported for testing.
 
 Pure helper that converts a raw WASM callback line to a typed JS value.
 Exported for testing.
+
+### `parsePoeticNumber(text)` → `number | undefined`
+
+Converts text using the Rockstar poetic numeric literal algorithm:
+each word contributes one digit using its length modulo 10, hyphens count as
+letters, apostrophes do not, statement-ending punctuation stops parsing, and
+an ellipsis (`...` or `…`) introduces the decimal separator.
+
+### `parseOutputLine(line)` → `object | undefined`
+
+Parses one raw callback line into a dual-view structure used by
+`rockstar_pro` (`raw`, `output`, `poetic`). Exported for testing.
 
 ---
 
@@ -90,6 +140,13 @@ the callback with the printed string (plus a trailing newline added by
 `WasmIO.WriteLine` in C#).  The tag strips whitespace and coerces numeric
 strings to `number`.
 
+`rockstar_pro` adds a parsing layer on top of that callback stream:
+
+- JSON-style lists are parsed when possible.
+- List members are converted recursively.
+- `output` preserves text for speech/lyrics workflows.
+- `poetic_output` produces numeric-ready values for sequence/math pipelines.
+
 ---
 
 ## CORS requirement
@@ -101,7 +158,6 @@ Access-Control-Allow-Origin: *
 ```
 
 Without this, browsers will block the cross-origin `import()` of `dotnet.js`.
-See [PLAN.md](PLAN.md) for the exact steps needed in the rockstar fork.
 
 ---
 

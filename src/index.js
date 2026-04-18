@@ -172,6 +172,187 @@ export function coerce(line) {
 }
 
 /**
+ * Convert text to a Rockstar-style poetic numeric literal.
+ *
+ * Rockstar counts each word's length modulo 10. Hyphens count as letters,
+ * apostrophes do not. Parsing stops at the end of the current statement
+ * (`.`, `!`, `?`, `;`, or a newline). An ellipsis (`...` or `…`) acts as the
+ * decimal separator.
+ *
+ * Examples:
+ * - "a panther, he ain't talkin' 'bout love." -> 1724644
+ * - "ice... a life unfulfilled" -> 3.141
+ *
+ * @param {string} text
+ * @returns {number | undefined}
+ */
+export function parsePoeticNumber(text) {
+  const source = String(text).replace(/…/g, '...');
+  const intDigits = [];
+  const fracDigits = [];
+  let currentWord = '';
+  let sawDecimal = false;
+
+  const pushWord = () => {
+    if (!currentWord) return;
+
+    const normalized = currentWord.replace(/'/g, '');
+    currentWord = '';
+    if (!normalized) return;
+
+    const digit = normalized.length % 10;
+    if (sawDecimal) {
+      fracDigits.push(String(digit));
+    } else {
+      intDigits.push(String(digit));
+    }
+  };
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+
+    if (source.slice(i, i + 3) === '...') {
+      pushWord();
+      sawDecimal = true;
+      i += 2;
+      continue;
+    }
+
+    if (char === '\n' || char === '.' || char === '!' || char === '?' || char === ';') {
+      pushWord();
+      break;
+    }
+
+    if (/[\p{L}'-]/u.test(char)) {
+      currentWord += char;
+      continue;
+    }
+
+    pushWord();
+  }
+
+  pushWord();
+
+  if (intDigits.length === 0 && fracDigits.length === 0) return undefined;
+
+  const intPart = intDigits.length > 0 ? intDigits.join('') : '0';
+  const value =
+    fracDigits.length > 0
+      ? Number(`${intPart}.${fracDigits.join('')}`)
+      : Number(intPart);
+
+  return Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Parse a single output line into parallel views used by `rockstar_pro`.
+ *
+ * `output` keeps text available for speech/lyrics workflows.
+ * `poetic` is always numeric-ready (number or nested arrays of numbers).
+ *
+ * @param {string} line
+ * @returns {{ raw: string, output: number|string|Array<unknown>, poetic: number|Array<number|Array<unknown>> } | undefined}
+ */
+export function parseOutputLine(line) {
+  const raw = line;
+  const trimmed = line.trimEnd();
+  if (trimmed === '') return undefined;
+
+  const parsedArray = _parseJsonArray(trimmed);
+  if (parsedArray !== undefined) {
+    const output = _toOutputArray(parsedArray);
+    const poetic = _toPoeticArray(parsedArray);
+    return { raw, output, poetic };
+  }
+
+  const output = coerce(trimmed);
+  const poetic = _toPoeticNumber(output);
+  return { raw, output, poetic };
+}
+
+/**
+ * Attempt to parse a JSON-style array string, otherwise return undefined.
+ * @param {string} text
+ * @returns {Array<unknown> | undefined}
+ */
+function _parseJsonArray(text) {
+  const startsLikeArray = text.startsWith('[') && text.endsWith(']');
+  if (!startsLikeArray) return undefined;
+
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Convert any parsed array value into output view values.
+ * Numeric-looking strings become numbers; other strings stay as text.
+ *
+ * @param {Array<unknown>} value
+ * @returns {Array<unknown>}
+ */
+function _toOutputArray(value) {
+  return value.map((item) => {
+    if (Array.isArray(item)) return _toOutputArray(item);
+    if (typeof item === 'string') {
+      const numeric = _parseNumberish(item);
+      return numeric !== undefined ? numeric : item;
+    }
+    return item;
+  });
+}
+
+/**
+ * Convert any parsed array value into poetic view values.
+ * Output is strictly numbers or nested arrays of numbers.
+ *
+ * @param {Array<unknown>} value
+ * @returns {Array<number|Array<unknown>>}
+ */
+function _toPoeticArray(value) {
+  return value.map((item) => {
+    if (Array.isArray(item)) return _toPoeticArray(item);
+    return _toPoeticNumber(item);
+  });
+}
+
+/**
+ * Convert a single scalar value to a number using numeric parse first,
+ * then Rockstar poetic numeric literal parsing.
+ *
+ * @param {unknown} value
+ * @returns {number}
+ */
+function _toPoeticNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value === null) return 0;
+
+  if (typeof value === 'string') {
+    const numeric = _parseNumberish(value);
+    if (numeric !== undefined) return numeric;
+
+    const poetic = parsePoeticNumber(value);
+    return poetic !== undefined ? poetic : 0;
+  }
+
+  return 0;
+}
+
+/**
+ * Parse text as a finite JS number.
+ * @param {string} text
+ * @returns {number | undefined}
+ */
+function _parseNumberish(text) {
+  const num = Number(String(text));
+  return Number.isFinite(num) ? num : undefined;
+}
+
+/**
  * Build the full Rockstar source string from a tagged-template call's parts.
  *
  * Template interpolations are stringified and spliced in, so you can
@@ -231,4 +412,64 @@ export async function rockstar(strings, ...values) {
   );
 
   return outputs;
+}
+
+/**
+ * Template tag that executes Rockstar and returns richer output views:
+ *
+ * - `output`: text-friendly typed values (with JSON-list support).
+ * - `poetic_output`: numeric-only values for number-based Strudel pipelines.
+ * - `raw_output`: unmodified callback lines from WASM.
+ * - `sourceText`: exact source string that was executed.
+ *
+ * @param {TemplateStringsArray} strings
+ * @param {...*} values
+ * @returns {Promise<{
+ *   sourceText: string,
+ *   raw_output: Array<string>,
+ *   output: Array<number|string|Array<unknown>>,
+ *   poetic_output: Array<number|Array<unknown>>,
+ *   getVariables: () => never,
+ *   callFunction: (name: string, ...args: Array<unknown>) => never,
+ *   listFunctions: () => never
+ * }>}
+ */
+export async function rockstar_pro(strings, ...values) {
+  const code = buildSource(strings, ...values);
+  const runner = await _runner();
+  const raw_output = [];
+  const output = [];
+  const poetic_output = [];
+
+  await runner.Run(
+    code,
+    (line) => {
+      raw_output.push(line);
+
+      const parsed = parseOutputLine(line);
+      if (!parsed) return;
+
+      output.push(parsed.output);
+      poetic_output.push(parsed.poetic);
+    },
+    /* stdin */ '',
+    /* args  */ ''
+  );
+
+  const unsupported = (featureName) => {
+    throw new Error(
+      `${featureName} is not available in the current JS-only wrapper. ` +
+        `It requires new JSExport methods in the WASM RockstarRunner.`
+    );
+  };
+
+  return {
+    sourceText: code,
+    raw_output,
+    output,
+    poetic_output,
+    getVariables: () => unsupported('getVariables()'),
+    callFunction: () => unsupported('callFunction()'),
+    listFunctions: () => unsupported('listFunctions()'),
+  };
 }
