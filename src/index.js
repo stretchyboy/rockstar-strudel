@@ -245,13 +245,19 @@ export function parsePoeticNumber(text) {
 }
 
 /**
- * Parse a single output line into parallel views used by `rockstar_pro`.
+ * Parse a single output line into the parallel views used by `rockstar_pro`.
  *
- * `output` keeps text available for speech/lyrics workflows.
- * `poetic` is always numeric-ready (number or nested arrays of numbers).
+ * - `output` is numeric-first for Strudel number pipelines.
+ * - `mixed_output` preserves words while keeping numeric values typed.
+ * - `text_output` keeps the same shape but stringifies all values.
  *
  * @param {string} line
- * @returns {{ raw: string, output: number|string|Array<unknown>, poetic: number|Array<number|Array<unknown>> } | undefined}
+ * @returns {{
+ *   raw: string,
+ *   output: number|Array<number|Array<unknown>>,
+ *   mixed_output: number|string|Array<unknown>,
+ *   text_output: string|Array<unknown>
+ * } | undefined}
  */
 export function parseOutputLine(line) {
   const raw = line;
@@ -260,14 +266,16 @@ export function parseOutputLine(line) {
 
   const parsedArray = _parseJsonArray(trimmed);
   if (parsedArray !== undefined) {
-    const output = _toOutputArray(parsedArray);
-    const poetic = _toPoeticArray(parsedArray);
-    return { raw, output, poetic };
+    const mixed_output = _toMixedArray(parsedArray);
+    const text_output = _toTextArray(mixed_output);
+    const output = _toPoeticArray(parsedArray);
+    return { raw, output, mixed_output, text_output };
   }
 
-  const output = coerce(trimmed);
-  const poetic = _toPoeticNumber(output);
-  return { raw, output, poetic };
+  const mixed_output = coerce(trimmed);
+  const text_output = _toTextValue(mixed_output);
+  const output = _toPoeticNumber(mixed_output);
+  return { raw, output, mixed_output, text_output };
 }
 
 /**
@@ -288,15 +296,15 @@ function _parseJsonArray(text) {
 }
 
 /**
- * Convert any parsed array value into output view values.
+ * Convert any parsed array value into mixed output values.
  * Numeric-looking strings become numbers; other strings stay as text.
  *
  * @param {Array<unknown>} value
  * @returns {Array<unknown>}
  */
-function _toOutputArray(value) {
+function _toMixedArray(value) {
   return value.map((item) => {
-    if (Array.isArray(item)) return _toOutputArray(item);
+    if (Array.isArray(item)) return _toMixedArray(item);
     if (typeof item === 'string') {
       const numeric = _parseNumberish(item);
       return numeric !== undefined ? numeric : item;
@@ -306,7 +314,30 @@ function _toOutputArray(value) {
 }
 
 /**
- * Convert any parsed array value into poetic view values.
+ * Convert a value tree to text output values.
+ * Numbers and other scalars are stringified while preserving array shape.
+ *
+ * @param {unknown} value
+ * @returns {string|Array<unknown>}
+ */
+function _toTextValue(value) {
+  if (Array.isArray(value)) return _toTextArray(value);
+  if (typeof value === 'string') return value;
+  return String(value);
+}
+
+/**
+ * Convert any parsed array value into text output values.
+ *
+ * @param {Array<unknown>} value
+ * @returns {Array<unknown>}
+ */
+function _toTextArray(value) {
+  return value.map((item) => _toTextValue(item));
+}
+
+/**
+ * Convert any parsed array value into numeric-first output values.
  * Output is strictly numbers or nested arrays of numbers.
  *
  * @param {Array<unknown>} value
@@ -353,6 +384,37 @@ function _parseNumberish(text) {
 }
 
 /**
+ * Resolve the interpolation values for a rerun of `rockstar_pro`.
+ *
+ * - `rerun()` repeats the previous interpolation set.
+ * - `rerun(v1, v2, ...)` replaces values positionally.
+ * - `rerun([v1, v2, ...])` replaces from an array.
+ * - `rerun(fn)` derives the next values from the previous array.
+ *
+ * @param {Array<unknown>} previousValues
+ * @param {...unknown} nextArgs
+ * @returns {Array<unknown>}
+ */
+export function resolveRerunValues(previousValues, ...nextArgs) {
+  if (nextArgs.length === 0) return [...previousValues];
+
+  if (nextArgs.length === 1) {
+    const [arg] = nextArgs;
+
+    if (typeof arg === 'function') {
+      const result = arg([...previousValues]);
+      return Array.isArray(result) ? [...result] : [result];
+    }
+
+    if (Array.isArray(arg)) {
+      return [...arg];
+    }
+  }
+
+  return [...nextArgs];
+}
+
+/**
  * Build the full Rockstar source string from a tagged-template call's parts.
  *
  * Template interpolations are stringified and spliced in, so you can
@@ -374,11 +436,12 @@ export function buildSource(strings, ...values) {
 }
 
 /**
- * Template tag that executes a Rockstar program and returns an array of every
- * value printed by the program (via `Say` / `Shout` / `Scream` / `Whisper`).
+ * Template tag that executes a Rockstar program and returns a numeric-first
+ * array of every printed value (via `Say` / `Shout` / `Scream` / `Whisper`).
  *
- * Values that parse as finite numbers are returned as JS `number`; everything
- * else is returned as a `string`.
+ * Plain numeric strings stay numeric, and other printed text is converted
+ * using Rockstar poetic numeric literal rules. JSON-style lists are converted
+ * recursively to nested numeric arrays.
  *
  * The WASM engine is loaded lazily on the first call and cached for subsequent
  * calls.  You can call `init()` first to pre-warm the engine if desired.
@@ -394,31 +457,19 @@ export function buildSource(strings, ...values) {
  *
  * @param {TemplateStringsArray} strings
  * @param {...*} values
- * @returns {Promise<Array<number|string>>}
+ * @returns {Promise<Array<number|Array<unknown>>>}
  */
 export async function rockstar(strings, ...values) {
-  const code = buildSource(strings, ...values);
-  const runner = await _runner();
-  const outputs = [];
-
-  await runner.Run(
-    code,
-    (line) => {
-      const value = coerce(line);
-      if (value !== undefined) outputs.push(value);
-    },
-    /* stdin */ '',
-    /* args  */ ''
-  );
-
-  return outputs;
+  const result = await rockstar_pro(strings, ...values);
+  return result.output;
 }
 
 /**
- * Template tag that executes Rockstar and returns richer output views:
+ * Template tag that executes Rockstar and returns richer parallel output views:
  *
- * - `output`: text-friendly typed values (with JSON-list support).
- * - `poetic_output`: numeric-only values for number-based Strudel pipelines.
+ * - `output`: numeric-first values for Strudel sequence/math use.
+ * - `mixed_output`: mixed typed values with words preserved.
+ * - `text_output`: all values stringified for speech/text workflows.
  * - `raw_output`: unmodified callback lines from WASM.
  * - `sourceText`: exact source string that was executed.
  *
@@ -426,9 +477,12 @@ export async function rockstar(strings, ...values) {
  * @param {...*} values
  * @returns {Promise<{
  *   sourceText: string,
+ *   templateValues: Array<unknown>,
  *   raw_output: Array<string>,
- *   output: Array<number|string|Array<unknown>>,
- *   poetic_output: Array<number|Array<unknown>>,
+ *   output: Array<number|Array<unknown>>,
+ *   mixed_output: Array<number|string|Array<unknown>>,
+ *   text_output: Array<string|Array<unknown>>,
+ *   rerun: (...values: Array<unknown>) => Promise<object>,
  *   getVariables: () => never,
  *   callFunction: (name: string, ...args: Array<unknown>) => never,
  *   listFunctions: () => never
@@ -439,7 +493,8 @@ export async function rockstar_pro(strings, ...values) {
   const runner = await _runner();
   const raw_output = [];
   const output = [];
-  const poetic_output = [];
+  const mixed_output = [];
+  const text_output = [];
 
   await runner.Run(
     code,
@@ -450,7 +505,8 @@ export async function rockstar_pro(strings, ...values) {
       if (!parsed) return;
 
       output.push(parsed.output);
-      poetic_output.push(parsed.poetic);
+      mixed_output.push(parsed.mixed_output);
+      text_output.push(parsed.text_output);
     },
     /* stdin */ '',
     /* args  */ ''
@@ -465,9 +521,15 @@ export async function rockstar_pro(strings, ...values) {
 
   return {
     sourceText: code,
+    templateValues: [...values],
     raw_output,
     output,
-    poetic_output,
+    mixed_output,
+    text_output,
+    rerun: (...nextArgs) => {
+      const nextValues = resolveRerunValues(values, ...nextArgs);
+      return rockstar_pro(strings, ...nextValues);
+    },
     getVariables: () => unsupported('getVariables()'),
     callFunction: () => unsupported('callFunction()'),
     listFunctions: () => unsupported('listFunctions()'),

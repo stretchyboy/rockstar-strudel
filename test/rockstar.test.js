@@ -15,6 +15,7 @@ import {
   isTrustedUrl,
   parsePoeticNumber,
   parseOutputLine,
+  resolveRerunValues,
 } from '../src/index.js';
 
 // ─── buildSource ────────────────────────────────────────────────────────────
@@ -204,21 +205,23 @@ describe('parsePoeticNumber', () => {
 // ─── parseOutputLine ────────────────────────────────────────────────────────
 
 describe('parseOutputLine', () => {
-  it('keeps text in output and converts to poetic number in poetic view', () => {
+  it('returns numeric-first output while preserving words in other views', () => {
     const parsed = parseOutputLine('hello world\n');
     assert.deepEqual(parsed, {
       raw: 'hello world\n',
-      output: 'hello world',
-      poetic: 55,
+      output: 55,
+      mixed_output: 'hello world',
+      text_output: 'hello world',
     });
   });
 
-  it('coerces plain numeric lines identically in both views', () => {
+  it('stringifies numbers in text_output', () => {
     const parsed = parseOutputLine('123\n');
     assert.deepEqual(parsed, {
       raw: '123\n',
       output: 123,
-      poetic: 123,
+      mixed_output: 123,
+      text_output: '123',
     });
   });
 
@@ -227,16 +230,18 @@ describe('parseOutputLine', () => {
     assert.deepEqual(parsed, {
       raw: '[ "012" ]\n',
       output: [12],
-      poetic: [12],
+      mixed_output: [12],
+      text_output: ['12'],
     });
   });
 
-  it('preserves words in output while converting them in poetic view', () => {
+  it('keeps mixed and text views alongside numeric-first output', () => {
     const parsed = parseOutputLine('["3", ["my dreams", "007"]]\n');
     assert.deepEqual(parsed, {
       raw: '["3", ["my dreams", "007"]]\n',
-      output: [3, ['my dreams', 7]],
-      poetic: [3, [26, 7]],
+      output: [3, [26, 7]],
+      mixed_output: [3, ['my dreams', 7]],
+      text_output: ['3', ['my dreams', '7']],
     });
   });
 
@@ -245,12 +250,39 @@ describe('parseOutputLine', () => {
     assert.equal(parseOutputLine('\r\n'), undefined);
   });
 
-  it('falls back to string output when malformed JSON list is printed', () => {
+  it('falls back to text in mixed/text views when malformed JSON list is printed', () => {
     const parsed = parseOutputLine('[ nope ]\n');
     assert.deepEqual(parsed, {
       raw: '[ nope ]\n',
-      output: '[ nope ]',
-      poetic: 4,
+      output: 4,
+      mixed_output: '[ nope ]',
+      text_output: '[ nope ]',
     });
+  });
+});
+
+// ─── resolveRerunValues ────────────────────────────────────────────────────
+
+describe('resolveRerunValues', () => {
+  it('repeats the previous values when no args are provided', () => {
+    assert.deepEqual(resolveRerunValues([1, 'two', 3]), [1, 'two', 3]);
+  });
+
+  it('replaces values positionally from variadic args', () => {
+    assert.deepEqual(resolveRerunValues([1, 2, 3], 9, 8), [9, 8]);
+  });
+
+  it('replaces values from an array argument', () => {
+    assert.deepEqual(resolveRerunValues([1, 2, 3], [7, 6]), [7, 6]);
+  });
+
+  it('derives next values from a function', () => {
+    const next = resolveRerunValues([2, 4, 6], (prev) => prev.map((n) => n * 10));
+    assert.deepEqual(next, [20, 40, 60]);
+  });
+
+  it('wraps a non-array function result as a single interpolation value', () => {
+    const next = resolveRerunValues([2, 4, 6], () => 99);
+    assert.deepEqual(next, [99]);
   });
 });

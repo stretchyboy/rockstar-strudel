@@ -5,8 +5,9 @@ Run [Rockstar](https://codewithrockstar.com) programs from the
 environment) via a simple template-tag function.
 
 Every value printed by `Say` / `Shout` / `Scream` / `Whisper` becomes one
-element of the returned array. Values that parse as finite numbers are
-returned as JS `number`; everything else is returned as a `string`.
+element of the returned array. The default `rockstar` view is now
+numeric-first, so printed text is converted using Rockstar's poetic numeric
+literal rules when needed.
 
 For richer workflows (lyrics/text + numeric pipelines), use `rockstar_pro`.
 
@@ -41,17 +42,32 @@ const pro = await rockstar_pro`
   Shout [ "012", ["my dreams", "007"] ]
 `
 
-// Text-friendly values for speech/lyrics use
-// pro.output === ["hello world", [12, ["my dreams", 7]]]
+// Default numeric-first values for number-based Strudel functions
+// pro.output === [55, [12, [26, 7]]]
 
-// Numeric-only values for number-based Strudel functions
-// pro.poetic_output === [55, [12, [26, 7]]]
+// Mixed typed values with words preserved where possible
+// pro.mixed_output === ["hello world", [12, ["my dreams", 7]]]
+
+// Fully stringified values for speech/text workflows
+// pro.text_output === ["hello world", ["12", ["my dreams", "7"]]]
 
 // Raw callback lines from WASM
 // pro.raw_output keeps trailing newlines exactly as emitted
 
 // Exact source text executed (after template interpolation)
 // pro.sourceText is available for lyric reuse
+
+const root = 60
+const melody = await rockstar_pro`
+  Tommy was ${root}
+  Build Tommy up, up, up, up
+  Shout Tommy
+`
+
+// Run the same template again with new interpolation values
+const shifted = await melody.rerun(62)
+// or derive from the previous interpolation array
+const shiftedAgain = await shifted.rerun(([prevRoot]) => [prevRoot + 2])
 ```
 
 
@@ -74,28 +90,29 @@ const data = await rockstar`
 
 ## API
 
-### `rockstar(strings, ...values)` → `Promise<Array<number|string>>`
+### `rockstar(strings, ...values)` → `Promise<Array<number|Array>>`
 
-Tagged-template function.  Runs the Rockstar source code and resolves with an
-array of every printed value.
+Tagged-template function. Runs the Rockstar source code and resolves with the
+numeric-first output view, ready for number-based Strudel functions.
 
 ### `rockstar_pro(strings, ...values)` → `Promise<object>`
 
-Tagged-template function with richer output views:
+Tagged-template function with richer parallel output views:
 
 - `sourceText`: exact Rockstar code that was executed.
 - `raw_output`: raw callback lines from WASM (verbatim, including trailing newlines).
-- `output`: text-friendly typed values.
-- `poetic_output`: numeric-only values (`number` or nested arrays of numbers),
-  aligned by index with `output`.
+- `output`: numeric-first values (`number` or nested numeric arrays).
+- `mixed_output`: mixed typed values with words preserved.
+- `text_output`: fully stringified values for text/speech use.
+- `templateValues`: the interpolation values used for this run.
+- `rerun(...values)`: run the same template again, replacing interpolation
+  values positionally. Calling `rerun()` with no arguments repeats the same run.
 
-`output[i]` and `poetic_output[i]` always refer to the same emitted line.
+`output[i]`, `mixed_output[i]`, and `text_output[i]` always refer to the same
+emitted line.
 
-For JSON-style list output (for example `[ "012" ]`), both views parse and
-convert recursively, so that case resolves to `[12]`.
-
-For non-list text output, words remain available in `output` while
-`poetic_output` applies Rockstar poetic numeric literal conversion.
+For JSON-style list output (for example `[ "012" ]`), all views parse the same
+structure, and `output` resolves that case to `[12]`.
 
 ### `init([dotnetUrl])` → `Promise<void>`
 
@@ -144,8 +161,9 @@ strings to `number`.
 
 - JSON-style lists are parsed when possible.
 - List members are converted recursively.
-- `output` preserves text for speech/lyrics workflows.
-- `poetic_output` produces numeric-ready values for sequence/math pipelines.
+- `output` is numeric-ready for sequence/math pipelines.
+- `mixed_output` preserves words while keeping numbers typed.
+- `text_output` keeps everything stringified for speech/lyrics workflows.
 
 ---
 
