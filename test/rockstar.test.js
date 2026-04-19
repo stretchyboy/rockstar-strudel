@@ -389,10 +389,39 @@ describe('rockstar wrappers (mocked runner)', () => {
     assert.equal(out.error, null);
   });
 
-  it('rockstar_pro preserves [] outputs and exposes an error field on runtime failure', async () => {
+  it('rockstar_pro preserves [] outputs and exposes an error field when the runner throws', async () => {
     const fakeRunner = {
       async Run() {
-        throw new Error('Parse error near "pri nt"');
+        throw new Error('Unexpected runtime crash');
+      },
+    };
+    __setRunnerPromiseForTests(Promise.resolve(fakeRunner));
+
+    const out = await rockstar_pro`
+      Tommy was 60
+      Say Tommy
+    `;
+
+    assert.deepEqual(out.output, []);
+    assert.deepEqual(out.mixed_output, []);
+    assert.deepEqual(out.text_output, []);
+    assert.deepEqual(out.error, {
+      name: 'Error',
+      message: 'Unexpected runtime crash',
+    });
+  });
+
+  it('rockstar_pro surfaces a parse error printed to stdout as error and clears output arrays', async () => {
+    // The Rockstar runner does not throw on bad syntax — it prints the error
+    // to the output callback.  Simulate exactly what the real runner emits
+    // for `pri nt "Hello, World"`.
+    const fakeRunner = {
+      async Run(_code, onLine) {
+        onLine("Error at line 1 col 1: Failed to parse 'program'.\n");
+        onLine('\n');
+        onLine('0: \n');
+        onLine('1: pri nt "Hello, World"\n');
+        onLine('        ^\n');
       },
     };
     __setRunnerPromiseForTests(Promise.resolve(fakeRunner));
@@ -404,9 +433,7 @@ describe('rockstar wrappers (mocked runner)', () => {
     assert.deepEqual(out.output, []);
     assert.deepEqual(out.mixed_output, []);
     assert.deepEqual(out.text_output, []);
-    assert.deepEqual(out.error, {
-      name: 'Error',
-      message: 'Parse error near "pri nt"',
-    });
+    assert.equal(out.error?.name, 'RockstarRuntimeError');
+    assert.ok(out.error?.message.startsWith('Error at line 1'));
   });
 });

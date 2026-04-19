@@ -549,6 +549,19 @@ export async function rockstar_pro(strings, ...values) {
       : { name: 'Error', message: String(err) };
   }
 
+  // The Rockstar runner reports parse/runtime errors by printing them to
+  // stdout rather than throwing.  Detect that pattern and surface it as
+  // a structured error while clearing the output arrays so callers see [].
+  if (!error && raw_output.length > 0) {
+    const firstLine = raw_output[0].trimEnd();
+    if (/^Error at line \d/.test(firstLine)) {
+      error = { name: 'RockstarRuntimeError', message: firstLine };
+      output.length = 0;
+      mixed_output.length = 0;
+      text_output.length = 0;
+    }
+  }
+
   const unsupported = (featureName) => {
     throw new Error(
       `${featureName} is not available in the current JS-only wrapper. ` +
