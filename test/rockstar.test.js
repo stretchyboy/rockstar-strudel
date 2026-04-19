@@ -7,14 +7,18 @@
  * Run with:  npm test
  */
 
-import { describe, it } from 'node:test';
+import { beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  __resetRunnerForTests,
+  __setRunnerPromiseForTests,
   buildSource,
   coerce,
   isTrustedUrl,
   parsePoeticNumber,
   parseOutputLine,
+  rockstar,
+  rockstar_pro,
   resolveRerunValues,
 } from '../src/index.js';
 
@@ -284,5 +288,125 @@ describe('resolveRerunValues', () => {
   it('wraps a non-array function result as a single interpolation value', () => {
     const next = resolveRerunValues([2, 4, 6], () => 99);
     assert.deepEqual(next, [99]);
+  });
+});
+
+// ─── example-program output shaping (non-WASM) ────────────────────────────
+
+describe('example Rockstar program outputs (non-WASM shaping)', () => {
+  const collectViews = (rawLines) => {
+    const output = [];
+    const mixed_output = [];
+    const text_output = [];
+
+    for (const line of rawLines) {
+      const parsed = parseOutputLine(line);
+      if (!parsed) continue;
+      output.push(parsed.output);
+      mixed_output.push(parsed.mixed_output);
+      text_output.push(parsed.text_output);
+    }
+
+    return { output, mixed_output, text_output };
+  };
+
+  it('matches the two-line numeric output shape from the Papa + Scream example', () => {
+    const parsed = collectViews(['175\n', '179\n']);
+    assert.deepEqual(parsed.output, [175, 179]);
+  });
+
+  it('matches rockstar numeric output for a single Say line', () => {
+    const parsed = collectViews(['175\n']);
+    assert.deepEqual(parsed.output, [175]);
+  });
+
+  it('matches rockstar_pro numeric output for a single Say line', () => {
+    const parsed = collectViews(['175\n']);
+    assert.deepEqual(parsed.output, [175]);
+  });
+
+  it('matches successive numeric updates from the He was with him example', () => {
+    const parsed = collectViews(['175\n', '350\n']);
+    assert.deepEqual(parsed.output, [175, 350]);
+  });
+
+  it('keeps AC/DC-like output text in mixed/text views', () => {
+    const parsed = collectViews(['AD/DC\n']);
+    assert.deepEqual(parsed.mixed_output, ['AD/DC']);
+    assert.deepEqual(parsed.text_output, ['AD/DC']);
+  });
+
+  it('produces empty parallel views when no lines are emitted', () => {
+    const parsed = collectViews([]);
+    assert.deepEqual(parsed.output, []);
+    assert.deepEqual(parsed.mixed_output, []);
+    assert.deepEqual(parsed.text_output, []);
+  });
+});
+
+// ─── rockstar / rockstar_pro wrappers via mocked runner ───────────────────
+
+describe('rockstar wrappers (mocked runner)', () => {
+  beforeEach(() => {
+    __resetRunnerForTests();
+  });
+
+  it('rockstar returns numeric-first output values', async () => {
+    const fakeRunner = {
+      async Run(_code, onLine) {
+        onLine('175\n');
+      },
+    };
+    __setRunnerPromiseForTests(Promise.resolve(fakeRunner));
+
+    const out = await rockstar`
+      Papa was a rolling stone
+      Say Papa
+    `;
+
+    assert.deepEqual(out, [175]);
+  });
+
+  it('rockstar_pro returns parallel output views', async () => {
+    const fakeRunner = {
+      async Run(_code, onLine) {
+        onLine('175\n');
+        onLine('350\n');
+      },
+    };
+    __setRunnerPromiseForTests(Promise.resolve(fakeRunner));
+
+    const out = await rockstar_pro`
+      Papa was a rolling stone
+      Say Papa
+      He was with him
+      Say Papa
+    `;
+
+    assert.deepEqual(out.output, [175, 350]);
+    assert.deepEqual(out.mixed_output, [175, 350]);
+    assert.deepEqual(out.text_output, ['175', '350']);
+    assert.equal(out.error, null);
+  });
+
+  it('rockstar_pro preserves [] outputs and exposes an error field on runtime failure', async () => {
+    const fakeRunner = {
+      async Run() {
+        throw new Error('Parse error near "pri nt"');
+      },
+    };
+    __setRunnerPromiseForTests(Promise.resolve(fakeRunner));
+
+    const out = await rockstar_pro`
+      pri nt "Hello, World"
+    `;
+
+    assert.deepEqual(out.output, []);
+    assert.deepEqual(out.mixed_output, []);
+    assert.deepEqual(out.text_output, []);
+    assert.deepEqual(out.error, {
+      name: 'Error',
+      message: 'Parse error near "pri nt"',
+    });
   });
 });

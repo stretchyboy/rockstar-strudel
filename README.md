@@ -142,6 +142,8 @@ Tagged-template function with richer parallel output views:
 - `output`: numeric-first values (`number` or nested numeric arrays).
 - `mixed_output`: mixed typed values with words preserved.
 - `text_output`: fully stringified values for text/speech use.
+- `error`: `null` on success, otherwise `{ name, message }` describing a runtime
+  failure from the underlying runner.
 - `speech`: sanitized line tokens derived from source code for Shabda speech
   sample lookup (for example `samples('shabda/speech:'+prog.speech.join(','))`).
 - `templateValues`: the interpolation values used for this run.
@@ -153,6 +155,24 @@ emitted line.
 
 For JSON-style list output (for example `[ "012" ]`), all views parse the same
 structure, and `output` resolves that case to `[12]`.
+
+When a runtime error occurs, `rockstar_pro` returns the same object shape with
+`output`, `mixed_output`, and `text_output` left as `[]`, while `error` carries
+the failure details.
+
+Example error handling:
+
+```js
+const prog = await rockstar_pro`
+  pri nt "Hello, World"
+`
+
+if (prog.error) {
+  console.error(`Rockstar runtime error: ${prog.error.message}`)
+} else {
+  note(seq(prog.output)).sound("piano")
+}
+```
 
 ### `init([dotnetUrl])` → `Promise<void>`
 

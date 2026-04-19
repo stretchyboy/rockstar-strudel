@@ -70,6 +70,27 @@ export function isTrustedUrl(url) {
 let _runnerPromise = null;
 
 /**
+ * Test-only seam: replace the cached runner promise.
+ * This allows unit tests to validate `rockstar` / `rockstar_pro`
+ * behavior without loading the WASM runtime.
+ *
+ * @param {Promise<object> | null} runnerPromise
+ * @returns {void}
+ */
+export function __setRunnerPromiseForTests(runnerPromise) {
+  _runnerPromise = runnerPromise;
+}
+
+/**
+ * Test-only helper: clear the cached runner promise.
+ *
+ * @returns {void}
+ */
+export function __resetRunnerForTests() {
+  _runnerPromise = null;
+}
+
+/**
  * Pre-load the Rockstar WASM engine.
  *
  * Called automatically on the first use of the `rockstar` tag, but you can
@@ -496,6 +517,7 @@ export async function rockstar_pro(strings, ...values) {
   const output = [];
   const mixed_output = [];
   const text_output = [];
+  let error = null;
   const lines = code.split('\n')
   const speech = lines.map((x) => x.toLowerCase()
   .trim()
@@ -505,21 +527,27 @@ export async function rockstar_pro(strings, ...values) {
 
   //console.log(`samples('shabda/speech:'+prog.speech.join(','))`)
 
-  await runner.Run(
-    code,
-    (line) => {
-      raw_output.push(line);
+  try {
+    await runner.Run(
+      code,
+      (line) => {
+        raw_output.push(line);
 
-      const parsed = parseOutputLine(line);
-      if (!parsed) return;
+        const parsed = parseOutputLine(line);
+        if (!parsed) return;
 
-      output.push(parsed.output);
-      mixed_output.push(parsed.mixed_output);
-      text_output.push(parsed.text_output);
-    },
-    /* stdin */ '',
-    /* args  */ ''
-  );
+        output.push(parsed.output);
+        mixed_output.push(parsed.mixed_output);
+        text_output.push(parsed.text_output);
+      },
+      /* stdin */ '',
+      /* args  */ ''
+    );
+  } catch (err) {
+    error = err instanceof Error
+      ? { name: err.name, message: err.message }
+      : { name: 'Error', message: String(err) };
+  }
 
   const unsupported = (featureName) => {
     throw new Error(
@@ -535,6 +563,7 @@ export async function rockstar_pro(strings, ...values) {
     output,
     mixed_output,
     text_output,
+    error,
     speech,
     rerun: (...nextArgs) => {
       const nextValues = resolveRerunValues(values, ...nextArgs);
